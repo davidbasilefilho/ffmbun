@@ -1,6 +1,6 @@
 {
   "name": "ffmbun",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "An alternative to ffmpeg using Bun's image capabilities",
   "keywords": [
     "bun",

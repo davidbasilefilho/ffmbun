@@ -98,7 +98,7 @@ async function main(): Promise<void> {
   const imageData = await readInput(opts.file);
 
   if (isUint8ArrayEmpty(imageData)) {
-    console.log(formatNoInput());
+    printHelp();
     process.exit(0);
   }
 
