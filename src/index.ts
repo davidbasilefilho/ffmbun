@@ -1,5 +1,14 @@
 #!/usr/bin/env bun
-import { getImageInfo, processImage, saveImage } from "./process";
+import {
+  getImageInfo,
+  processImage,
+  processImagePlaceholder,
+  processImageToBase64,
+  processImageToDataUrl,
+  processClipboardImage as processClipboard,
+  hasClipboardImage,
+  saveImage,
+} from "./process";
 import type { ProcessOptions } from "./process";
 import { style } from "./style";
 import {
@@ -33,12 +42,24 @@ function resolveOutputFormat(opts: CliOptions): OutputFormat {
 
 /** Build ProcessOptions from parsed CLI arguments. */
 function buildProcessOptions(opts: CliOptions): ProcessOptions {
-  const encode = {
-    format: resolveOutputFormat(opts),
-    quality: opts.quality,
-  };
+  const encode =
+    opts.format || opts.outFile
+      ? {
+          format: resolveOutputFormat(opts),
+          quality: opts.quality,
+          progressive: opts.progressive || undefined,
+          lossless: opts.lossless || undefined,
+          palette: opts.palette || undefined,
+          colors: opts.colors,
+          compressionLevel: opts.compressionLevel,
+          dither: opts.dither || undefined,
+        }
+      : undefined;
 
-  const processOpts: ProcessOptions = { encode };
+  const processOpts: ProcessOptions = {
+    encode,
+    backend: opts.backend,
+  };
 
   if (opts.resize) {
     const parts = opts.resize.split("x");
@@ -95,13 +116,6 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const imageData = await readInput(opts.file);
-
-  if (isUint8ArrayEmpty(imageData)) {
-    printHelp();
-    process.exit(0);
-  }
-
   // --info mode: show metadata and exit
   if (opts.info) {
     if (!opts.file) {
@@ -115,7 +129,56 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // Clipboard source
+  if (opts.clipboard) {
+    if (!hasClipboardImage()) {
+      console.error(style.red("No image found in clipboard"));
+      process.exit(1);
+    }
+    const processOpts = buildProcessOptions(opts);
+    const bytes = await processClipboard(processOpts);
+    if (opts.outFile) {
+      const written = await saveImage(bytes, opts.outFile);
+      console.error(
+        style.green(`Written to ${style.bold(opts.outFile)} (${(written / 1024).toFixed(1)} KB)`),
+      );
+    } else {
+      process.stdout.write(bytes);
+    }
+    return;
+  }
+
+  const imageData = await readInput(opts.file);
+
+  if (isUint8ArrayEmpty(imageData)) {
+    printHelp();
+    process.exit(0);
+  }
+
   const processOpts = buildProcessOptions(opts);
+
+  // Terminal: placeholder data URL
+  if (opts.placeholder) {
+    const placeholder = await processImagePlaceholder(imageData, processOpts);
+    console.log(placeholder);
+    process.exit(0);
+  }
+
+  // Terminal: base64
+  if (opts.base64) {
+    const b64 = await processImageToBase64(imageData, processOpts);
+    console.log(b64);
+    process.exit(0);
+  }
+
+  // Terminal: data URL
+  if (opts.dataurl) {
+    const du = await processImageToDataUrl(imageData, processOpts);
+    console.log(du);
+    process.exit(0);
+  }
+
+  // Default terminal: bytes
   const bytes = await processImage(imageData, processOpts);
 
   if (opts.outFile) {

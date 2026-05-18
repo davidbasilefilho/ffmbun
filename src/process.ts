@@ -21,6 +21,18 @@ export interface ModulateOptions {
 export interface EncodeOptions {
   format: OutputFormat;
   quality?: number;
+  /** Enable progressive scan (JPEG only) */
+  progressive?: boolean;
+  /** Encode as lossless (WebP only) */
+  lossless?: boolean;
+  /** Use indexed color palette (PNG only) */
+  palette?: boolean;
+  /** Number of colors for indexed palette, 2-256 (PNG only) */
+  colors?: number;
+  /** Enable dithering for indexed palette (PNG only) */
+  dither?: boolean;
+  /** PNG compression level, 0-9 (PNG only) */
+  compressionLevel?: number;
 }
 
 /** Complete set of processing options for the image pipeline */
@@ -30,7 +42,13 @@ export interface ProcessOptions {
   flip?: boolean;
   flop?: boolean;
   modulate?: ModulateOptions;
-  encode: EncodeOptions;
+  encode?: EncodeOptions;
+  /** Auto-orient based on EXIF metadata (default: true) */
+  autoOrient?: boolean;
+  /** Decompression bomb limit in pixels */
+  maxPixels?: number;
+  /** Image processing backend */
+  backend?: "system" | "bun";
 }
 
 /** Metadata extracted from an image */
@@ -59,14 +77,29 @@ function mapFilterName(filter: ResampleFilter): string {
   return filter;
 }
 
+/** Internal constructor options for Bun.Image */
+interface LoadImageOptions {
+  autoOrient: boolean;
+  maxPixels?: number;
+}
+
 /**
  * Load an image from bytes or a file path.
  *
  * @param input - The image source: a file path string, a Uint8Array, or a Buffer.
+ * @param opts - Constructor options (autoOrient, maxPixels).
  * @returns A Bun.Image instance ready for processing.
  */
-function loadImage(input: string | Uint8Array | Buffer): Bun.Image {
-  return new Bun.Image(input as any, { autoOrient: true });
+function loadImage(
+  input: string | Uint8Array | Buffer,
+  opts: LoadImageOptions = { autoOrient: true },
+): Bun.Image {
+  const constructOpts: Record<string, unknown> = {};
+  constructOpts.autoOrient = opts.autoOrient;
+  if (opts.maxPixels !== undefined) {
+    constructOpts.maxPixels = opts.maxPixels;
+  }
+  return new Bun.Image(input as any, constructOpts);
 }
 
 /**
@@ -119,26 +152,66 @@ function applyTransforms(image: Bun.Image, opts: ProcessOptions): Bun.Image {
  * Encode a Bun.Image into the specified output format.
  *
  * @param image - The image to encode.
- * @param opts - Encoding options (format and quality).
+ * @param opts - Encoding options (format, quality, and advanced codec options).
  * @returns A Bun.Image in the target format.
  */
 function encodeImage(image: Bun.Image, opts: EncodeOptions): Bun.Image {
-  const { format, quality } = opts;
+  const { format, quality, progressive, lossless, palette, colors, dither, compressionLevel } =
+    opts;
 
   switch (format) {
     case "jpeg":
-      return image.jpeg({ quality });
+      return image.jpeg({ quality, progressive });
     case "png":
       return image.png({
-        compressionLevel: quality !== undefined ? Math.round(quality / 10) : undefined,
+        ...(compressionLevel !== undefined
+          ? { compressionLevel }
+          : quality !== undefined
+            ? { compressionLevel: Math.round(quality / 10) }
+            : {}),
+        ...(palette !== undefined && { palette }),
+        ...(colors !== undefined && { colors }),
+        ...(dither !== undefined && { dither }),
       });
     case "webp":
-      return image.webp({ quality });
+      return image.webp({ quality, lossless });
     case "heic":
       return image.heic({ quality });
     case "avif":
       return image.avif({ quality });
   }
+}
+
+/**
+ * Internal pipeline: load → applyTransforms → encode.
+ *
+ * Sets the image backend if specified, then loads the image with the configured constructor
+ * options, applies all transforms, and encodes to the target format.
+ *
+ * @param input - File path or raw bytes of the source image.
+ * @param opts - Processing options specifying transforms and output format.
+ * @returns The encoded Bun.Image ready for terminal extraction.
+ */
+async function runPipeline(
+  input: string | Uint8Array | Buffer,
+  opts: ProcessOptions,
+): Promise<Bun.Image> {
+  if (opts.backend) {
+    Bun.Image.backend = opts.backend;
+  }
+
+  const image = loadImage(input, {
+    autoOrient: opts.autoOrient ?? true,
+    maxPixels: opts.maxPixels,
+  });
+
+  const transformed = applyTransforms(image, opts);
+
+  if (!opts.encode) {
+    throw new Error("Encode options are required. Did you mean to use processImagePlaceholder?");
+  }
+
+  return encodeImage(transformed, opts.encode);
 }
 
 /**
@@ -152,9 +225,131 @@ export async function processImage(
   input: string | Uint8Array | Buffer,
   opts: ProcessOptions,
 ): Promise<Uint8Array> {
-  const image = loadImage(input);
+  return await (await runPipeline(input, opts)).bytes();
+}
+
+/**
+ * Process an image and return a Base64-encoded string.
+ *
+ * @param input - File path or raw bytes of the source image.
+ * @param opts - Processing options specifying transforms and output format.
+ * @returns The encoded image as a Base64 string.
+ */
+export async function processImageToBase64(
+  input: string | Uint8Array | Buffer,
+  opts: ProcessOptions,
+): Promise<string> {
+  return (await runPipeline(input, opts)).toBase64();
+}
+
+/**
+ * Process an image and return a data URL string.
+ *
+ * @param input - File path or raw bytes of the source image.
+ * @param opts - Processing options specifying transforms and output format.
+ * @returns The encoded image as a data URL.
+ */
+export async function processImageToDataUrl(
+  input: string | Uint8Array | Buffer,
+  opts: ProcessOptions,
+): Promise<string> {
+  return (await runPipeline(input, opts)).dataurl();
+}
+
+/**
+ * Process an image and return a Node.js Buffer.
+ *
+ * @param input - File path or raw bytes of the source image.
+ * @param opts - Processing options specifying transforms and output format.
+ * @returns The encoded image as a Buffer.
+ */
+export async function processImageToBuffer(
+  input: string | Uint8Array | Buffer,
+  opts: ProcessOptions,
+): Promise<Buffer> {
+  return (await runPipeline(input, opts)).buffer();
+}
+
+/**
+ * Process an image and return a Blob.
+ *
+ * @param input - File path or raw bytes of the source image.
+ * @param opts - Processing options specifying transforms and output format.
+ * @returns The encoded image as a Blob.
+ */
+export async function processImageToBlob(
+  input: string | Uint8Array | Buffer,
+  opts: ProcessOptions,
+): Promise<Blob> {
+  return (await runPipeline(input, opts)).blob();
+}
+
+/**
+ * Generate a low-resolution placeholder data URL from an image.
+ *
+ * Loads the image, applies transforms, and calls `.placeholder()` to produce a small embedded
+ * preview. Does not require encode options.
+ *
+ * @param input - File path or raw bytes of the source image.
+ * @param opts - Processing options specifying transforms (encode is not required).
+ * @returns A placeholder data URL string.
+ */
+export async function processImagePlaceholder(
+  input: string | Uint8Array | Buffer,
+  opts: ProcessOptions = {},
+): Promise<string> {
+  if (opts.backend) {
+    Bun.Image.backend = opts.backend;
+  }
+
+  const image = loadImage(input, {
+    autoOrient: opts.autoOrient ?? true,
+    maxPixels: opts.maxPixels,
+  });
+
   const transformed = applyTransforms(image, opts);
+
+  return transformed.placeholder();
+}
+
+/**
+ * Check if an image is currently available on the system clipboard.
+ *
+ * @returns `true` if a clipboard image exists, `false` otherwise.
+ */
+export function hasClipboardImage(): boolean {
+  try {
+    return Bun.Image.fromClipboard() !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Process an image from the system clipboard through the full pipeline.
+ *
+ * @param opts - Processing options specifying transforms and output format.
+ * @returns The encoded image bytes.
+ */
+export async function processClipboardImage(opts: ProcessOptions): Promise<Uint8Array> {
+  const clipboardImage = Bun.Image.fromClipboard();
+
+  if (!clipboardImage) {
+    throw new Error("No image found in clipboard");
+  }
+
+  if (opts.backend) {
+    Bun.Image.backend = opts.backend;
+  }
+
+  const transformed = applyTransforms(clipboardImage, opts);
+
+  if (!opts.encode) {
+    throw new Error("Encode options are required for processClipboardImage");
+  }
+
   const encoded = encodeImage(transformed, opts.encode);
+
   return await encoded.bytes();
 }
 

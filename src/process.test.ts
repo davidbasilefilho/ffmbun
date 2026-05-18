@@ -1,6 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
-import { getImageInfo, processImage, saveImage } from "./process";
+import {
+  getImageInfo,
+  hasClipboardImage,
+  processImage,
+  processImagePlaceholder,
+  processImageToBase64,
+  processImageToBlob,
+  processImageToBuffer,
+  processImageToDataUrl,
+  saveImage,
+} from "./process";
 import type { ImageInfo, ProcessOptions } from "./process";
 
 // 1x1 red pixel PNG as base64
@@ -138,6 +148,96 @@ describe("processImage format conversion", () => {
       }
     });
   }
+});
+
+describe("new terminal functions", () => {
+  const baseOpts: ProcessOptions = {
+    encode: { format: "png" },
+  };
+
+  test("processImageToBase64 returns a base64 string", async () => {
+    const b64 = await processImageToBase64(testPngPath, baseOpts);
+    expect(typeof b64).toBe("string");
+    expect(b64.length).toBeGreaterThan(0);
+    // Verify it looks like base64
+    expect(b64).toMatch(/^[A-Za-z0-9+/=]+$/);
+  });
+
+  test("processImageToDataUrl returns a data URL", async () => {
+    const du = await processImageToDataUrl(testPngPath, baseOpts);
+    expect(typeof du).toBe("string");
+    expect(du).toMatch(/^data:image\/png;base64,/);
+  });
+
+  test("processImageToBuffer returns a Buffer", async () => {
+    const buf = await processImageToBuffer(testPngPath, baseOpts);
+    expect(buf instanceof Buffer || "length" in buf).toBe(true);
+    expect(buf.length).toBeGreaterThan(0);
+  });
+
+  test("processImageToBlob returns a Blob", async () => {
+    const blob = await processImageToBlob(testPngPath, baseOpts);
+    expect(blob instanceof Blob).toBe(true);
+    expect(blob.size).toBeGreaterThan(0);
+  });
+
+  test("processImagePlaceholder returns a data URL string", async () => {
+    const lqip = await processImagePlaceholder(testPngPath);
+    expect(typeof lqip).toBe("string");
+    expect(lqip).toMatch(/^data:image\/\w+;base64,/);
+  });
+
+  test("processImagePlaceholder applies transforms", async () => {
+    const lqip = await processImagePlaceholder(testPngPath, {
+      resize: { width: 50 },
+    });
+    expect(typeof lqip).toBe("string");
+    expect(lqip).toMatch(/^data:image\/\w+;base64,/);
+  });
+});
+
+describe("clipboard", () => {
+  test("hasClipboardImage does not throw", () => {
+    expect(hasClipboardImage()).toBeBoolean();
+  });
+});
+
+describe("advanced encode options", () => {
+  test("progressive JPEG", async () => {
+    const bytes = await processImage(testPngPath, {
+      encode: { format: "jpeg", quality: 80, progressive: true },
+    });
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+
+  test("lossless WebP", async () => {
+    const bytes = await processImage(testPngPath, {
+      encode: { format: "webp", lossless: true },
+    });
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+
+  test("indexed PNG with palette", async () => {
+    const bytes = await processImage(testPngPath, {
+      encode: { format: "png", palette: true, colors: 32 },
+    });
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+
+  test("PNG with explicit compression level", async () => {
+    const bytes = await processImage(testPngPath, {
+      encode: { format: "png", compressionLevel: 9 },
+    });
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+
+  test("backend bun override", async () => {
+    const bytes = await processImage(testPngPath, {
+      encode: { format: "png" },
+      backend: "bun",
+    });
+    expect(bytes.length).toBeGreaterThan(0);
+  });
 });
 
 describe("saveImage", () => {

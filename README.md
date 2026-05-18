@@ -2,7 +2,7 @@
 
 **An alternative to ffmpeg using Bun's image capabilities** — powered by Bun's native [`Bun.Image`](https://bun.sh/docs/runtime/image) engine.
 
-Resize, rotate, flip, convert, and adjust images — all in one fast CLI tool.
+Resize, rotate, flip, convert, adjust, generate placeholders, and output in multiple formats — all in one fast CLI tool with an **ffmpeg-compatible CLI interface**.
 
 ## Install
 
@@ -11,6 +11,24 @@ bun install -g ffmbun
 ```
 
 ## Usage
+
+### ffmpeg-style (recommended)
+
+```bash
+# Convert to WebP (ffmpeg-style)
+ffmbun -i photo.jpg -c:v libwebp photo.webp
+
+# Scale and horizontal flop
+ffmbun -i photo.jpg -vf "scale=800:-1,hflip" output.jpg
+
+# Rotate 90° CW with quality
+ffmbun -i photo.jpg -vf "transpose=1" -q:v 90 output.jpg
+
+# Use codec selection
+ffmbun -i photo.jpg -c:v mjpeg -q:v 85 output.jpg
+```
+
+### Original-style (also supported)
 
 ```bash
 # Convert an image to WebP
@@ -33,9 +51,23 @@ ffmbun photo.jpg --brightness 0.2 --saturation 0.5 -o adjusted.jpg
 
 # Pipe from stdin
 cat photo.jpg | ffmbun --format png -o out.png
+
+# Generate a low-res placeholder data URL for HTML
+ffmbun hero.jpg --resize 100 --placeholder
+
+# Process from clipboard
+ffmbun --clipboard --format webp -o clipboard.webp
+
+# Lossless WebP
+ffmbun photo.jpg --lossless -o photo.webp
+
+# Indexed PNG (3-5× smaller for screenshots)
+ffmbun screenshot.png --palette --colors 64 -o optimized.png
 ```
 
 ## Options
+
+### Image options
 
 | Flag                    | Description                                                                           |
 | ----------------------- | ------------------------------------------------------------------------------------- |
@@ -57,6 +89,39 @@ cat photo.jpg | ffmbun --format png -o out.png
 | `--version`, `-v`       | Show version                                                                          |
 | `--help`, `-h`          | Show this help                                                                        |
 
+### ffmpeg-compatible flags
+
+| Flag                           | Description                                     |
+| ------------------------------ | ----------------------------------------------- |
+| `-i <file>`                    | Input file path                                 |
+| `-s <WxH>`                     | Resize (same as `--resize`)                     |
+| `-vf <filter_graph>`           | Filter graph: `scale`, `hflip`, `vflip`, `transpose`, `hue`, `eq` |
+| `-q:v <n>`                     | Quality (same as `--quality`)                    |
+| `-c:v`, `--codec:v`, `--c:v <codec>` | Codec selection (`libwebp`, `mjpeg`, `png`, etc.) |
+| `-f <fmt>`                     | Force output format                             |
+| `-y`                           | Overwrite output without asking                 |
+
+### Output terminals
+
+| Flag              | Description                                     |
+| ----------------- | ----------------------------------------------- |
+| `--placeholder`   | Output a low-res placeholder data URL (ThumbHash) |
+| `--base64`        | Output base64-encoded string                     |
+| `--dataurl`       | Output data URL                                 |
+| `--clipboard`     | Read image from system clipboard instead of file |
+
+### Advanced encode options
+
+| Flag                   | Description                       |
+| ---------------------- | --------------------------------- |
+| `--progressive`        | Progressive JPEG                  |
+| `--lossless`           | Lossless WebP                     |
+| `--palette`            | Indexed PNG palette               |
+| `--colors <n>`         | Palette colors (2-256)            |
+| `--compression-level <n>` | PNG compression level (0-9)     |
+| `--dither`             | Enable PNG palette dithering      |
+| `--backend <mode>`     | Backend: `system` or `bun`        |
+
 ## Features
 
 - **Resize** — width-only (maintains aspect ratio), exact dimensions, fit modes (fill/inside), multiple resampling filters
@@ -65,8 +130,17 @@ cat photo.jpg | ffmbun --format png -o out.png
 - **Modulate** — brightness, saturation, hue, and lightness adjustments
 - **Format conversion** — JPEG, PNG, WebP, HEIC, AVIF
 - **Metadata** — view image dimensions and format with `--info`
+- **Placeholder (ThumbHash)** — generate low-res data URLs for HTML previews (~400-700 bytes)
+- **Base64 / data URL** — output as base64 string or data URL
+- **Clipboard I/O** — read images from system clipboard (macOS/Windows)
+- **Progressive JPEG** — coarse-to-fine rendering for slow connections
+- **Lossless WebP** — higher quality for lossless workflows
+- **Indexed PNG** — palette-based PNG (3-5× smaller for screenshots/UI assets)
+- **Backend toggle** — switch between system (Accelerate/ImageIO) and bun (portable Highway SIMD)
+- **Decompression bomb protection** — set `maxPixels` limit
+- **ffmpeg-compatible CLI** — `-i`, `-vf`, `-c:v`, `-q:v`, `-f`, `-s`, `-y`, positional output
 - **Stdin support** — pipe image data directly into the tool
-- **Fast** — built on Bun's native `Bun.Image` with zero overhead
+- **Fast** — built on Bun's native `Bun.Image` with zero overhead, libjpeg-turbo, spng, libwebp
 - **Auto-orient** — EXIF orientation is automatically applied
 
 ## Development
