@@ -1,0 +1,57 @@
+{
+  "name": "ffmbun",
+  "version": "0.1.0",
+  "description": "An alternative to ffmpeg using Bun's image capabilities",
+  "keywords": [
+    "bun",
+    "cli",
+    "convert",
+    "image",
+    "jpeg",
+    "png",
+    "resize",
+    "webp"
+  ],
+  "homepage": "https://github.com/davidbasilefilho/ffmbun#readme",
+  "bugs": {
+    "url": "https://github.com/davidbasilefilho/ffmbun/issues"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davidbasilefilho/ffmbun.git"
+  },
+  "funding": "https://github.com/sponsors/davidbasilefilho",
+  "bin": {
+    "ffmbun": "./dist/ffmbun"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "build": "bun build ./src/index.ts --outfile ./dist/ffmbun --target bun",
+    "format": "oxfmt --write",
+    "lint": "oxlint --fix",
+    "check": "bun run --parallel lint format",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "oxfmt": "^0.50.0",
+    "oxlint": "^1.65.0",
+    "oxlint-tsgolint": "^0.23.0"
+  },
+  "peerDependencies": {
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}
